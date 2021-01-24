@@ -17,6 +17,7 @@ cursor.execute("create table if not exists guestbook"
             "character set utf8;")
 @app.route('/',methods=['GET'])
 def board():
+    cursor.execute('select*from guestbook')
     value=cursor.fetchall()
     board=jsonify(value)
     return board
