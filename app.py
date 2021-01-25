@@ -13,7 +13,7 @@ cursor.execute("use test")
 cursor.execute("create table if not exists"
             " user(username char(20),nickname char(20),password char(20),sex char(1))character set utf8;")
 cursor.execute("create table if not exists guestbook"
-            "(content char(200),username char(20),nickname char(20),post_time timestamp(6),last_correct timestamp(6))"
+            "(content_id int primary key auto_increment,content char(200),username char(20),nickname char(20),post_time timestamp(6),last_correct timestamp(6))"
             "character set utf8;")
 @app.route('/',methods=['GET'])
 def board():
@@ -29,33 +29,34 @@ def write():
     if username is None:
         raise HttpError(401, '请先登录')
     content=data.get('content')
-    cursor.execute('insert into `guestbook`(`content`,`username`,`post_time`) values(%s,%s,now())',
-                   (content,username))
+    cursor.execute('select nickname from guestbook where username=%s',(username))
+    nickname=cursor.fetchone()
+    cursor.execute('insert into `guestbook`(`content`,`username`,`post_time`,`nickname`) values(%s,%s,now(),%s)',
+                   (content,username,nickname))
     con.commit()
-    session['content']=content
     return "发表成功"
 
 @app.route('/guestbook/content',methods=["PUT"])
 def correct():
     data=request.get_json(force=True)
     username=session.get('username')
-    content=session.get('content')
-    content2=data.get('content2')
+    content_id=data.get('content_id')
+    content=data.get('content')
     if username is None:
         raise HttpError(401, '请先登录')
-    cursor.execute('update `guestbook` set `content`=%s,last_correct=now() where username=%s and content=%s',
-                   (content2,username,content))
+    cursor.execute('update `guestbook` set `content`=%s,last_correct=now() where username=%s and content_id=%s',
+                   (content,username,content_id))
     con.commit()
-    session['content']=content2
     return '修改成功'
 
 @app.route('/guestbook/deletion',methods=['DELETE'])
 def deletion():
-    content=session.get('content')
+    data=request.get_json(force=True)
+    content_id=data.get('content')
     username=session.get('username')
     if username is None:
         raise HttpError(401, '请先登录')
-    cursor.execute('delete from`guestbook` where username=%s and content=%s',(username,content))
+    cursor.execute('delete from`guestbook` where username=%s and content=%s',(username,content_id))
     con.commit()
     return '删除成功'
 
@@ -69,7 +70,7 @@ def register():
     cursor.execute('select count(*) from `user` where `username`=%s',(username,))
     count=cursor.fetchone()
     if count[0]>=1:
-        raise HttpError(409, '用户名已存在')
+        raise HttpError(400, '用户名已存在')
     if username is None:
         raise  HttpError(400,"请输入username")
     if nickname is None:
@@ -80,7 +81,7 @@ def register():
         raise HttpError(400, "请输入sex")
     cursor.execute('insert into `user`(`username`,`nickname`,`password`,`sex`) values (%s, %s,%s,%s)',(username, nickname, password, sex))
     con.commit()
-    return render_template('login.html')
+    return "注册成功"
 
 @app.route('/me',methods=['GET'])
 def my_information():
@@ -115,14 +116,13 @@ def login():
 def change_username():
     data=request.get_json(force=True)
     username=session.get('username')
-    print(username)
     if username is None:
         raise HttpError(401, '请先登录')
     username2=data.get('username2')
     cursor.execute('select count(*) from `user` where `username`=%s', (username2,))
     count=cursor.fetchone()[0]
     if count>=1:
-        raise HttpError(409, '用户名已存在')
+        raise HttpError(400, '用户名已存在')
     cursor.execute('update `user` set `username`=%s where username=%s', (username2, username))
     con.commit()
     session['username']=username2
