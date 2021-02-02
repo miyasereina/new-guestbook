@@ -1,9 +1,11 @@
 import pymysql
 from flask import Flask, request, jsonify, session, render_template
-from gevent import pywsgi
-
+from flask_cors import CORS
 app=Flask(__name__)
+CORS(app, supports_credentials=True)
 app.secret_key='123456'
+app.config["SESSION_COOKIE_SAMESITE"] = "None"
+app.config["SESSION_COOKIE_SECURE"] = True
 
 
 con=pymysql.connect(user='root',password='reina0526', charset='utf8')
@@ -15,6 +17,7 @@ cursor.execute("create table if not exists"
 cursor.execute("create table if not exists guestbook"
             "(content_id int primary key auto_increment,content char(200),username char(20),nickname char(20),post_time timestamp(6),last_correct timestamp(6))"
             "character set utf8;")
+
 @app.route('/',methods=['GET'])
 def board():
     cursor.execute('select*from guestbook')
@@ -22,19 +25,21 @@ def board():
     board=jsonify(value)
     return board
 
-@app.route('/guestbook',methods=['POST'])
+@app.route('/guestbook',methods=['GET','POST'])
 def write():
-    data=request.get_json(force=True)
-    username=session.get('username')
-    if username is None:
-        raise HttpError(401, '请先登录')
-    content=data.get('content')
-    cursor.execute('select nickname from guestbook where username=%s',(username))
-    nickname=cursor.fetchone()
-    cursor.execute('insert into `guestbook`(`content`,`username`,`post_time`,`nickname`) values(%s,%s,now(),%s)',
-                   (content,username,nickname))
-    con.commit()
-    return "发表成功"
+    if request.method == 'POST':
+        data=request.get_json(force=True)
+        username=session.get('username')
+        if username is None:
+            raise HttpError(401, '请先登录')
+        content=data.get('content')
+        cursor.execute('select nickname from guestbook where username=%s',(username))
+        nickname=cursor.fetchone()
+        cursor.execute('insert into `guestbook`(`content`,`username`,`post_time`,`nickname`) values(%s,%s,now(),%s)',
+                       (content,username,nickname))
+        con.commit()
+        return "发表成功"
+    return render_template('留言.html')
 
 @app.route('/guestbook/content',methods=["PUT"])
 def correct():
@@ -60,28 +65,30 @@ def deletion():
     con.commit()
     return '删除成功'
 
-@app.route('/user', methods=['POST','GET'])
+@app.route('/user', methods=['GET','POST'])
 def register():
-    data=request.get_json(force=True)
-    username=data.get('username')
-    nickname=data.get('nickname')
-    password=data.get('password')
-    sex=data.get("sex")
-    cursor.execute('select count(*) from `user` where `username`=%s',(username,))
-    count=cursor.fetchone()
-    if count[0]>=1:
-        raise HttpError(400, '用户名已存在')
-    if username is None:
-        raise  HttpError(400,"请输入username")
-    if nickname is None:
-        raise HttpError(400, "请输入nickname")
-    if password is None:
-        raise HttpError(400, "请输入password")
-    if sex is None:
-        raise HttpError(400, "请输入sex")
-    cursor.execute('insert into `user`(`username`,`nickname`,`password`,`sex`) values (%s, %s,%s,%s)',(username, nickname, password, sex))
-    con.commit()
-    return "注册成功"
+    if request.method=='POST':
+        data=request.get_json(force=True)
+        username=data.get('username')
+        nickname=data.get('nickname')
+        password=data.get('password')
+        sex=data.get("sex")
+        cursor.execute('select count(*) from `user` where `username`=%s',(username,))
+        count=cursor.fetchone()
+        if count[0]>=1:
+            raise HttpError(400, '用户名已存在')
+        if username is None:
+            raise  HttpError(400,"请输入username")
+        if nickname is None:
+            raise HttpError(400, "请输入nickname")
+        if password is None:
+            raise HttpError(400, "请输入password")
+        if sex is None:
+            raise HttpError(400, "请输入sex")
+        cursor.execute('insert into `user`(`username`,`nickname`,`password`,`sex`) values (%s, %s,%s,%s)',(username, nickname, password, sex))
+        con.commit()
+        return "注册成功"
+    return render_template('注册.html')
 
 @app.route('/me',methods=['GET'])
 def my_information():
@@ -96,20 +103,22 @@ def my_information():
 
 
 
-@app.route('/login', methods=['POST'])
+@app.route('/login', methods=['GET','POST'])
 def login():
-    data=request.get_json(force=True)
-    username=data.get('username')
-    password=data.get('password')
-    cursor.execute('select `username`, `password` from `user` where `username`=%s', (username,))
-    values=cursor.fetchone()
-    if values is None:
-        raise HttpError(402, '用户名或密码错误')
-    if username!=values[0] or password!=values[1]:
-        raise HttpError(402, '用户名或密码错误')
-    session['username']=username
-    session['password']=password
-    return '登录成功'
+    if request.method=='POST':
+        data=request.get_json(force=True)
+        username=data.get('username')
+        password=data.get('password')
+        cursor.execute('select `username`, `password` from `user` where `username`=%s', (username,))
+        values=cursor.fetchone()
+        if values is None:
+            raise HttpError(402, '用户名或密码错误')
+        if username!=values[0] or password!=values[1]:
+            raise HttpError(402, '用户名或密码错误')
+        session['username']=username
+        session['password']=password
+        return '登录成功'
+    return render_template('登录.html')
 
 
 @app.route('/users/username', methods=['PUT'])
@@ -158,6 +167,5 @@ def handle_http_error(error):
     response.status_code = error.status_code
     return response
 
-if __name__ == '__main__':
-    server=pywsgi.WSGIServer(('0.0.0.0',8000),app)
-    server.serve_forever()
+if __name__=="__main__":
+    app.run(port=5000,host='0.0.0.0',debug=True)
